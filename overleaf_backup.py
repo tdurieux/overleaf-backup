@@ -10,16 +10,17 @@ import zipfile
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+
 def initParser():
     parser = argparse.ArgumentParser(description='Create a backup of all your Sharelatex paper')
     parser.add_argument('-email', required=True, help='Sharelatex email')
     parser.add_argument('-password', required=True, help='Sharelatex password')
-    parser.add_argument('-url', required=False, default="https://sharelatex.irisa.fr", help='The Sharelatex server')
+    parser.add_argument('-url', required=False, default="https://www.overleaf.com", help='The Sharelatex server')
     parser.add_argument('-output', default="~/sharelatex/backup", required=False, help='The ouput folder of the backup')
     parser.add_argument('-pdf', action="store_true", default=False, help='Download the PDF')
     return parser.parse_args()
 
-rootUrl = "https://sharelatex.irisa.fr"
+rootUrl = "https://www.overleaf.com"
 pathBackup = "~/sharelatex/backup"
 isDownloadPDF = False
 session = requests.Session()
@@ -33,23 +34,21 @@ def login(email, password):
         data = {
             "email": email,
             "password": password,
-            "redir": "/project",
             "_csrf": m.group(1)
         }
         r = session.post(url, data, verify=False)
-        if r.status_code == 200:
-            return 'message' not in r.json()
+        return r.status_code == 200
     return False
 
 def getPapers():
     url = rootUrl + "/project"
     r = session.get(url, verify=False)
-    m = re.search(" projects: ([^\n]+),\n", r.text.encode('utf-8'))
+    m = re.search("\\{\"projects\":([^\n]*)", r.text.encode('utf-8'))
     if m:
-        data = json.loads(m.group(1))
-        papers = data[:]
-        for paper in data:
-            if paper['archived']:
+        data = json.loads(m.group(0))
+        papers = data['projects'][:]
+        for paper in data['projects']:
+            if paper['archived'] or paper['isV1Project']:
                 papers.remove(paper)
         return papers 
     return []
@@ -90,6 +89,7 @@ def downloadZip(papers, oldPapers):
         url = rootUrl + "/project/" + paper['id'] + "/download/zip"
         r = session.get(url, verify=False, stream=True)
         if r.status_code != 200:
+            print("Unable to download the paper %s" %(paper['name']))
             continue
         if not os.path.exists(pathBackup):
             os.makedirs(pathBackup)
